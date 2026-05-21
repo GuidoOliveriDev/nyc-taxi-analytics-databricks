@@ -67,3 +67,5 @@ diarias y patrones horarios.
 
 ---
 *Proyecto personal de exploración de Databricks.*
+
+Hecho por [Guido Luca Oliveri](https://www.linkedin.com/in/guido-luca-oliveri-6a79b3bb) — Sr Data Analyst
