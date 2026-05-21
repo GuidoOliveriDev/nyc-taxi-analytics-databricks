@@ -37,6 +37,8 @@ diarias y patrones horarios.
 4. ¿Cuáles son las rutas origen-destino más frecuentes?
 
 ## 📁 Estructura del repo
+
+```
 ├── notebooks/
 │   ├── 01_bronze.sql      # ingesta cruda
 │   ├── 02_silver.sql      # limpieza y enriquecimiento
@@ -45,6 +47,7 @@ diarias y patrones horarios.
 ├── dashboard/
 │   └── dashboard_overview.png
 └── README.md
+```
 
 ## ▶️ Cómo correrlo
 
