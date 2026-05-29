@@ -1,6 +1,6 @@
 # NYC Taxi Analytics — Databricks Lakehouse Demo
 
-Proyecto end-to-end de análisis de viajes de taxi en NYC usando 
+Proyecto end-to-end de análisis de viajes de taxi en NYC usando
 Databricks Free Edition y arquitectura medallion (Bronze / Silver / Gold).
 
 ## 📊 Dashboard
@@ -12,21 +12,23 @@ Databricks Free Edition y arquitectura medallion (Bronze / Silver / Gold).
 - **Databricks Free Edition** (Serverless compute)
 - **Delta Lake** (formato de tabla con ACID + time travel)
 - **Databricks SQL**
+- **PySpark** (DataFrame API)
 - **AI/BI Dashboards** (visualización nativa)
+
 
 ## 🏗️ Arquitectura Medallion
 
 **Bronze** (`trips_bronze`)  
-Ingesta cruda desde `samples.nyctaxi.trips`, sin transformaciones. 
+Ingesta cruda desde `samples.nyctaxi.trips`, sin transformaciones.
 Source of truth, permite reprocesar las capas superiores si cambia la lógica.
 
 **Silver** (`trips_silver`)  
-Datos limpios y enriquecidos: filtrado de outliers (fares negativos, 
-distancias en cero, viajes con timestamp inválido) y columnas derivadas 
+Datos limpios y enriquecidos: filtrado de outliers (fares negativos,
+distancias en cero, viajes con timestamp inválido) y columnas derivadas
 (duración del viaje en minutos, hora y fecha del pickup).
 
 **Gold** (`daily_metrics`, `hourly_patterns`)  
-Agregaciones de negocio listas para consumo en dashboards: métricas 
+Agregaciones de negocio listas para consumo en dashboards: métricas
 diarias y patrones horarios.
 
 ## ❓ Preguntas de negocio respondidas
@@ -36,14 +38,16 @@ diarias y patrones horarios.
 3. ¿Qué zonas (por ZIP code) generan más demanda y revenue?
 4. ¿Cuáles son las rutas origen-destino más frecuentes?
 
+
 ## 📁 Estructura del repo
 
 ```
 ├── notebooks/
-│   ├── 01_bronze.sql      # ingesta cruda
-│   ├── 02_silver.sql      # limpieza y enriquecimiento
-│   ├── 03_gold.sql        # agregaciones de negocio
-│   └── 04_analysis.sql    # queries de análisis (window functions, CTEs)
+│   ├── 01_bronze.sql              # ingesta cruda
+│   ├── 02_silver.sql              # limpieza y enriquecimiento (SQL)
+│   ├── 02_silver_pyspark.py       # misma lógica de Silver en PySpark + apéndice de técnicas
+│   ├── 03_gold.sql                # agregaciones de negocio
+│   └── 04_analysis.sql            # queries de análisis (window functions, CTEs)
 ├── dashboard/
 │   └── dashboard_overview.png
 └── README.md
@@ -55,17 +59,42 @@ diarias y patrones horarios.
 2. Ejecutar los notebooks en orden: `01 → 02 → 03 → 04`
 3. Replicar el dashboard apuntando a las tablas gold
 
+
+## 🐍 PySpark Implementation
+
+Como ejercicio comparativo, la capa **Silver** también se implementó usando 
+**PySpark DataFrame API** (`notebooks/02_silver_pyspark.py`), aplicando exactamente 
+la misma lógica de negocio que la versión en Spark SQL (`02_silver.sql`).
+
+**Validación de paridad**: ambas versiones escriben en tablas separadas 
+(`trips_silver` vs `trips_silver_pyspark`) y se comparan por row count y por 
+agregaciones clave (suma de fares, duración promedio) para confirmar que producen 
+resultados idénticos.
+
+**Apéndice de técnicas** (en el mismo notebook, sección separada, no afecta la 
+transformación Silver ni la validación de paridad):
+- **Broadcast join**: enriquecimiento con tabla chica de zonas para evitar shuffle.
+- **Window function**: ranking de viajes por fare por día (`dense_rank`).
+
+**Cuándo conviene cada approach**:
+- **Spark SQL**: lógica declarativa, queries ad-hoc, consumo desde BI.
+- **PySpark DataFrame API**: lógica condicional compleja, optimizaciones finas 
+  (broadcast hints, ventanas con lógica custom), pipelines productivos con testing.
+
+
 ## 🔍 Decisiones técnicas
 
-- **Por qué medallion**: separar raw, limpio y agregado permite 
-  reprocesar capas superiores si la lógica de negocio cambia, sin 
-  tener que volver a ingestar desde la fuente.
-- **Por qué Delta Lake**: ACID transactions, schema enforcement y 
-  time travel para auditar cambios.
-- **Filtrado de outliers en Silver**: fares > $500 y trip_distance = 0 
-  distorsionan los promedios de las tablas gold y los dashboards.
+- **Por qué medallion**: separar raw, limpio y agregado permite
+reprocesar capas superiores si la lógica de negocio cambia, sin
+tener que volver a ingestar desde la fuente.
+- **Por qué Delta Lake**: ACID transactions, schema enforcement y
+time travel para auditar cambios.
+- **Filtrado de outliers en Silver**: fares > $500 y trip_distance = 0
+distorsionan los promedios de las tablas gold y los dashboards.
 
 ---
+
+
 *Proyecto personal de exploración de Databricks.*
 
 Hecho por [Guido Luca Oliveri](https://www.linkedin.com/in/guido-luca-oliveri-6a79b3bb) — Sr Data Analyst
