@@ -1,5 +1,4 @@
 # Databricks notebook source
-# Databricks notebook source
 # Silver en PySpark: misma lógica que 02_silver.sql, con DataFrame API
 # Objetivo: comparar Spark SQL vs PySpark DataFrame API y validar paridad
 from pyspark.sql import functions as F
