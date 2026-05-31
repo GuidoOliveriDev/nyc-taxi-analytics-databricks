@@ -12,22 +12,21 @@ Databricks Free Edition y arquitectura medallion (Bronze / Silver / Gold).
 - **Databricks Free Edition** (Serverless compute)
 - **Delta Lake** (formato de tabla con ACID + time travel)
 - **Databricks SQL**
-- **PySpark** (DataFrame API)
 - **AI/BI Dashboards** (visualización nativa)
-
+- **PySpark (DataFrame API) + pandas** (Silver reimplementado en PySpark con validación de paridad + notebook demostrativo eager vs lazy)
 
 ## 🏗️ Arquitectura Medallion
 
-**Bronze** (`trips_bronze`)  
+**Bronze** (`trips_bronze`)
 Ingesta cruda desde `samples.nyctaxi.trips`, sin transformaciones.
 Source of truth, permite reprocesar las capas superiores si cambia la lógica.
 
-**Silver** (`trips_silver`)  
+**Silver** (`trips_silver`)
 Datos limpios y enriquecidos: filtrado de outliers (fares negativos,
 distancias en cero, viajes con timestamp inválido) y columnas derivadas
 (duración del viaje en minutos, hora y fecha del pickup).
 
-**Gold** (`daily_metrics`, `hourly_patterns`)  
+**Gold** (`daily_metrics`, `hourly_patterns`)
 Agregaciones de negocio listas para consumo en dashboards: métricas
 diarias y patrones horarios.
 
@@ -38,16 +37,16 @@ diarias y patrones horarios.
 3. ¿Qué zonas (por ZIP code) generan más demanda y revenue?
 4. ¿Cuáles son las rutas origen-destino más frecuentes?
 
-
 ## 📁 Estructura del repo
 
 ```
 ├── notebooks/
 │   ├── 01_bronze.sql              # ingesta cruda
-│   ├── 02_silver.sql              # limpieza y enriquecimiento (SQL)
-│   ├── 02_silver_pyspark.py       # misma lógica de Silver en PySpark + apéndice de técnicas
+│   ├── 02_silver.sql              # limpieza y enriquecimiento (Spark SQL)
+│   ├── 02_silver_pyspark.py       # misma lógica Silver en PySpark DataFrame API + apéndice de técnicas
 │   ├── 03_gold.sql                # agregaciones de negocio
-│   └── 04_analysis.sql            # queries de análisis (window functions, CTEs)
+│   ├── 04_analysis.sql            # queries de análisis (window functions, CTEs)
+│   └── 05_eager_vs_lazy.py        # PySpark vs pandas: lazy vs eager evaluation
 ├── dashboard/
 │   └── dashboard_overview.png
 └── README.md
@@ -58,29 +57,10 @@ diarias y patrones horarios.
 1. Crear schema en Databricks: `CREATE SCHEMA workspace.taxi_demo;`
 2. Ejecutar los notebooks en orden: `01 → 02 → 03 → 04`
 3. Replicar el dashboard apuntando a las tablas gold
-
-
-## 🐍 PySpark Implementation
-
-Como ejercicio comparativo, la capa **Silver** también se implementó usando 
-**PySpark DataFrame API** (`notebooks/02_silver_pyspark.py`), aplicando exactamente 
-la misma lógica de negocio que la versión en Spark SQL (`02_silver.sql`).
-
-**Validación de paridad**: ambas versiones escriben en tablas separadas 
-(`trips_silver` vs `trips_silver_pyspark`) y se comparan por row count y por 
-agregaciones clave (suma de fares, duración promedio) para confirmar que producen 
-resultados idénticos.
-
-**Apéndice de técnicas** (en el mismo notebook, sección separada, no afecta la 
-transformación Silver ni la validación de paridad):
-- **Broadcast join**: enriquecimiento con tabla chica de zonas para evitar shuffle.
-- **Window function**: ranking de viajes por fare por día (`dense_rank`).
-
-**Cuándo conviene cada approach**:
-- **Spark SQL**: lógica declarativa, queries ad-hoc, consumo desde BI.
-- **PySpark DataFrame API**: lógica condicional compleja, optimizaciones finas 
-  (broadcast hints, ventanas con lógica custom), pipelines productivos con testing.
-
+4. (Opcional) Correr `02_silver_pyspark.py` para generar la versión PySpark
+   del Silver y validar paridad contra `02_silver.sql`
+5. (Opcional) Correr `05_eager_vs_lazy.py` sobre la Silver para ver la
+   diferencia entre evaluación lazy (Spark) y eager (pandas)
 
 ## 🔍 Decisiones técnicas
 
@@ -92,8 +72,45 @@ time travel para auditar cambios.
 - **Filtrado de outliers en Silver**: fares > $500 y trip_distance = 0
 distorsionan los promedios de las tablas gold y los dashboards.
 
----
+## 🐍 Python (PySpark + pandas)
 
+### Silver en PySpark (`02_silver_pyspark.py`)
+
+Como ejercicio comparativo, la capa Silver también se implementó usando
+PySpark DataFrame API (`notebooks/02_silver_pyspark.py`), aplicando
+exactamente la misma lógica de negocio que la versión en Spark SQL
+(`02_silver.sql`).
+
+**Validación de paridad:** ambas versiones escriben en tablas separadas
+(`trips_silver` vs `trips_silver_pyspark`) y se comparan por row count y
+por agregaciones clave (suma de fares, duración promedio) para confirmar
+que producen resultados idénticos.
+
+**Apéndice de técnicas** (en el mismo notebook, sección separada, no
+afecta la transformación Silver ni la validación de paridad):
+
+- **Broadcast join**: enriquecimiento con tabla chica de zonas para evitar shuffle.
+- **Window function**: ranking de viajes por fare por día (`dense_rank`).
+
+**Cuándo conviene cada approach:**
+
+- **Spark SQL**: lógica declarativa, queries ad-hoc, consumo desde BI.
+- **PySpark DataFrame API**: lógica condicional compleja, optimizaciones
+finas (broadcast hints, ventanas con lógica custom), pipelines productivos
+con testing.
+
+### Eager vs Lazy (`05_eager_vs_lazy.py`)
+
+Demuestra una diferencia clave del stack: Spark construye un plan y solo
+ejecuta cuando hay una *acción* (lazy), mientras que pandas ejecuta cada
+operación al instante (eager). El notebook usa `.explain()` y mediciones
+de tiempo para hacerlo visible sobre la tabla Silver del proyecto. El plan
+físico muestra además **predicate pushdown** de Photon: el filtro
+`trip_distance > 5` se empuja al scan en lugar de aplicarse después de
+leer toda la tabla. Esa optimización del plan antes de ejecutar es
+justamente lo que la evaluación lazy hace posible.
+
+---
 
 *Proyecto personal de exploración de Databricks.*
 
